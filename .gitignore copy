@@ -1,0 +1,22 @@
+#  Local .terraform directories
+.terraform/
+
+# .tfstate files
+*.tfstate
+*.tfstate.*
+
+# .tfvars files
+*.tfvars
+
+# tardigrade-ci
+.tardigrade-ci
+tardigrade-ci/
+
+# terraform lock file
+.terraform.lock.hcl
+
+# Cache created by pytest
+tests/__pycache__/
+
+# terratest
+tests/go.*

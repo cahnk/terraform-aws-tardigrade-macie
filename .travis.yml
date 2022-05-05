@@ -1,0 +1,57 @@
+dist: focal
+
+language: minimal
+
+stages:
+  - lint
+  - deploy
+
+if: branch = master OR type = pull_request
+
+before_install:
+  - tmpdaemon=$(mktemp)
+  - sudo jq '."registry-mirrors" += ["https://mirror.gcr.io"]' /etc/docker/daemon.json > "$tmpdaemon"
+  - sudo mv "$tmpdaemon" /etc/docker/daemon.json
+  - sudo systemctl daemon-reload
+  - sudo systemctl restart docker
+  - docker system info
+
+jobs:
+  include:
+    - stage: lint
+      name: Project Syntax Verification
+      script: make docker/run target=lint
+    # moto has not implemented Macie configurations yet, so the CI test fails while running pytest.  The tests pass when run against an actual AWS account.  We need to uncomment the following lines when moto catches up.
+    #- stage: test
+    #  name: Apply Terraform test configs in mockstack
+    #  install:
+    #    - make docker-compose/install
+    #    - make mockstack/up
+    #  script: make mockstack/pytest PYTEST_ARGS="-k 'not create_macie_member and not create_macie_org_admin_account'"
+    #  after_script:
+    #    - make mockstack/clean
+    - stage: deploy
+      if: branch = master AND type = push AND repo = plus3it/terraform-aws-tardigrade-macie
+      before_script:
+        - |
+          PRIOR_VERSION=$(git describe --abbrev=0 --tags)
+          RELEASE_VERSION=$(grep current_version $TRAVIS_BUILD_DIR/.bumpversion.cfg | sed 's/^.*= //' )
+          RELEASE_BODY="* [terraform-aws-tardigrade-macie v$RELEASE_VERSION CHANGELOG](https://github.com/plus3it/terraform-aws-tardigrade-macie/blob/$RELEASE_VERSION/CHANGELOG.md)"
+          export PRIOR_VERSION RELEASE_VERSION RELEASE_BODY
+      script: skip
+      before_deploy:
+        - |
+          (set -x; git tag -a $RELEASE_VERSION -m $RELEASE_VERSION)
+      deploy:
+        provider: releases
+        token:
+          secure: Fs3VDzdOF1ODrgowGXErtRCpL8cZLtJQ4sLrcpgW9rxOi/rJfNteiHoN8uWoxk2RKgYiimB1NsOxpI+LS9PueygoDseCRDTAQdJnR1NKG+r0dk2aEPmoDKX8vLy1DNjhGkLr/tsdR4ABbV5CYzgJskpoSzTHoZVK5mUC3oTieGj9w6PqYrdpmKN/lFOTqipWmkt7KYHbkxgmrtpLzr3mACR18Q5flznCQ1tVLkLXQBRsCV0THV9zTm+3OS/F7u/s9vd4I329bRc6RVUnjtvL19ydKXbCUDi557q+RMchOwTaWyPJiDfxPovQMDr2iJsCvnm89zOXPgkUAv1u550Ir+cJE7cqWwWi2eEz1Cd8pNy9qFeFbyE+Y4O8K4r0Gw2PgB8qPpy/qshNbg6WB1cFZLm6tvZ320PGV6e20+lojimw3+FgpHCfT79b9oXWC8Of/w0lg1btb9SHa7tHhPF0rbDgPN+l5N01q5jrndIV87rHc+bBhMu3PFix051fBlZ2slIO1SIS5817grpW/FFNdkw5bmADfQnzxSss8QsimIF5oa0i72vViNyrEUE1D/ssyBJpAuM/0ZSUWCuRpQFgNlppTYVS2W3dh0+8bTdDnIqrPIh9y/iTVBa0bsZbF9XcqAVBE5u+boyQfcCBF32+0yThn2breWgC31BEYFD3rc4=
+        name: $RELEASE_VERSION
+        release_notes: $RELEASE_BODY
+        tag_name: $RELEASE_VERSION
+        target_commitish: $TRAVIS_COMMIT
+        draft: false
+        on:
+          branch: master
+          repo: plus3it/terraform-aws-tardigrade-macie
+          condition: '"$PRIOR_VERSION" != "$RELEASE_VERSION"'
